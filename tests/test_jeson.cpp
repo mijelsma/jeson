@@ -1391,4 +1391,13 @@ describe("jeson::Value dynamic JSON documents", []() {
             expect(jeson::parse(input, value).ok()).toBe(false);
         }
     });
+
+    it("[negative] keeps nested error paths while building them lazily", []() {
+        jeson::Value value;
+        const auto errors = jeson::parse(R"({"outer":[0,{"bad":tru}]})", value);
+
+        expect(errors.ok()).toBe(false);
+        expect(errors.list().empty()).toBe(false);
+        expect(errors.list().front().path).toBe(std::string("/outer/1/bad"));
+    });
 });

@@ -14,7 +14,6 @@
 #pragma once
 
 #include <cerrno>
-#include <cctype>
 #include <charconv>
 #include <cmath>
 #include <cstdint>
@@ -77,6 +76,13 @@ private:
     std::string_view m_s;
     std::size_t m_pos = 0;
 
+    struct DynamicPath {
+        const DynamicPath* parent;
+        std::string_view segment;
+        std::size_t index;
+        bool isIndex;
+    };
+
     // ---- low-level cursor helpers -----------------------------------
     // Operate directly on m_s/m_pos; none of these interpret JSON
     // structure beyond their own name (skipValue() is the exception -
@@ -110,6 +116,8 @@ private:
         }
         return false;
     }
+
+    [[nodiscard]] static constexpr bool isDigit(char t_c) { return t_c >= '0' && t_c <= '9'; }
 
     /// Skips over one complete, well-formed JSON value of any shape
     /// (object, array, string, number, or literal) without interpreting
@@ -158,7 +166,7 @@ private:
         } else if (consumeLiteral("true") || consumeLiteral("false") || consumeLiteral("null")) {
             // nothing else to do
         } else {
-            while (m_pos < m_s.size() && (std::isdigit(static_cast<unsigned char>(m_s[m_pos])) || m_s[m_pos] == '-' || m_s[m_pos] == '+' || m_s[m_pos] == '.' || m_s[m_pos] == 'e' || m_s[m_pos] == 'E')) {
+            while (m_pos < m_s.size() && (isDigit(m_s[m_pos]) || m_s[m_pos] == '-' || m_s[m_pos] == '+' || m_s[m_pos] == '.' || m_s[m_pos] == 'e' || m_s[m_pos] == 'E')) {
                 ++m_pos;
             }
         }
@@ -202,13 +210,13 @@ private:
 
         if (t_text[i] == '0') {
             ++i;
-            if (i < t_text.size() && std::isdigit(static_cast<unsigned char>(t_text[i]))) {
+            if (i < t_text.size() && isDigit(t_text[i])) {
                 return false;
             }
         } else if (t_text[i] >= '1' && t_text[i] <= '9') {
             do {
                 ++i;
-            } while (i < t_text.size() && std::isdigit(static_cast<unsigned char>(t_text[i])));
+            } while (i < t_text.size() && isDigit(t_text[i]));
         } else {
             return false;
         }
@@ -216,7 +224,7 @@ private:
         if (i < t_text.size() && t_text[i] == '.') {
             ++i;
             const std::size_t fractionStart = i;
-            while (i < t_text.size() && std::isdigit(static_cast<unsigned char>(t_text[i]))) {
+            while (i < t_text.size() && isDigit(t_text[i])) {
                 ++i;
             }
             if (i == fractionStart) {
@@ -230,7 +238,7 @@ private:
                 ++i;
             }
             const std::size_t exponentStart = i;
-            while (i < t_text.size() && std::isdigit(static_cast<unsigned char>(t_text[i]))) {
+            while (i < t_text.size() && isDigit(t_text[i])) {
                 ++i;
             }
             if (i == exponentStart) {
@@ -287,110 +295,147 @@ private:
         }
     }
 
+    static void appendDynamicPath(std::string& t_out, const DynamicPath* t_path) {
+        if (t_path == nullptr) {
+            return;
+        }
+        appendDynamicPath(t_out, t_path->parent);
+        t_out += '/';
+        if (t_path->isIndex) {
+            char buffer[32];
+            const auto result = std::to_chars(buffer, buffer + sizeof(buffer), t_path->index);
+            t_out.append(buffer, static_cast<std::size_t>(result.ptr - buffer));
+        } else {
+            t_out += t_path->segment;
+        }
+    }
+
+    static void addDynamicError(ParseErrors& t_errors,
+                                std::string_view t_basePath,
+                                const DynamicPath* t_path,
+                                std::string t_message) {
+        std::string path(t_basePath);
+        appendDynamicPath(path, t_path);
+        t_errors.add(std::move(path), std::move(t_message));
+    }
+
     void parseDynamicValue(Value& t_target, const std::string& t_path, ParseErrors& t_errors) {
+        parseDynamicValue(t_target, t_path, nullptr, t_errors);
+    }
+
+    void parseDynamicValue(Value& t_target,
+                           std::string_view t_basePath,
+                           const DynamicPath* t_path,
+                           ParseErrors& t_errors) {
         skipWs();
         if (consumeLiteral("null")) {
-            t_target = Value(nullptr);
+            t_target.emplace<Value::Null>(nullptr);
             return;
         }
         if (consumeLiteral("true")) {
-            t_target = Value(true);
+            t_target.emplace<bool>(true);
             return;
         }
         if (consumeLiteral("false")) {
-            t_target = Value(false);
+            t_target.emplace<bool>(false);
             return;
         }
         if (peek() == '"') {
             std::string value;
             if (!parseRawString(value)) {
-                t_errors.add(t_path, "invalid string");
+                addDynamicError(t_errors, t_basePath, t_path, "invalid string");
                 return;
             }
-            t_target = Value(std::move(value));
+            t_target.emplace<std::string>(std::move(value));
             return;
         }
         if (consume('[')) {
-            Value::Array values;
+            auto& values = t_target.emplace<Value::Array>();
             skipWs();
             if (consume(']')) {
-                t_target = Value(std::move(values));
                 return;
             }
+            // Two slots cover common coordinate pairs and small message
+            // arrays while avoiding the vector's 0 -> 1 -> 2 growth cycle.
+            // Empty arrays still allocate nothing.
+            values.reserve(2);
             std::size_t index = 0;
             while (true) {
                 Value value;
-                parseDynamicValue(value, t_path + "/" + std::to_string(index), t_errors);
+                const DynamicPath child{t_path, {}, index, true};
+                parseDynamicValue(value, t_basePath, &child, t_errors);
                 values.push_back(std::move(value));
                 ++index;
                 skipWs();
                 if (consume(',')) {
                     skipWs();
                     if (peek() == ']') {
-                        t_errors.add(t_path, "expected array value after ','");
+                        addDynamicError(t_errors, t_basePath, t_path, "expected array value after ','");
                         consume(']');
                         break;
                     }
                     continue;
                 }
                 if (!consume(']')) {
-                    t_errors.add(t_path, "expected ',' or ']'");
+                    addDynamicError(t_errors, t_basePath, t_path, "expected ',' or ']'");
                 }
                 break;
             }
-            t_target = Value(std::move(values));
             return;
         }
         if (consume('{')) {
-            Value::Object values;
+            auto& values = t_target.emplace<Value::Object>();
             skipWs();
             if (consume('}')) {
-                t_target = Value(std::move(values));
                 return;
             }
+            // Most configuration/telemetry objects have at least two fields.
+            // This keeps the heuristic deliberately small and allocation-free
+            // for empty objects.
+            values.reserve(2);
             while (true) {
                 std::string key;
                 if (!parseRawString(key)) {
-                    t_errors.add(t_path, "expected object key");
+                    addDynamicError(t_errors, t_basePath, t_path, "expected object key");
                     break;
                 }
                 skipWs();
                 if (!consume(':')) {
-                    t_errors.add(t_path, "expected ':' after key '" + key + "'");
+                    addDynamicError(t_errors, t_basePath, t_path, "expected ':' after key '" + key + "'");
                     break;
                 }
                 skipWs();
                 Value value;
-                parseDynamicValue(value, joinPath(t_path, key), t_errors);
+                const DynamicPath child{t_path, key, 0, false};
+                parseDynamicValue(value, t_basePath, &child, t_errors);
                 values.emplace_back(std::move(key), std::move(value));
                 skipWs();
                 if (consume(',')) {
                     skipWs();
                     if (peek() == '}') {
-                        t_errors.add(t_path, "expected object member after ','");
+                        addDynamicError(t_errors, t_basePath, t_path, "expected object member after ','");
                         consume('}');
                         break;
                     }
                     continue;
                 }
                 if (!consume('}')) {
-                    t_errors.add(t_path, "expected ',' or '}'");
+                    addDynamicError(t_errors, t_basePath, t_path, "expected ',' or '}'");
                 }
                 break;
             }
-            t_target = Value(std::move(values));
             return;
         }
 
         const std::size_t start = m_pos;
         while (m_pos < m_s.size() &&
-               (std::isdigit(static_cast<unsigned char>(m_s[m_pos])) || m_s[m_pos] == '-' ||
+               (isDigit(m_s[m_pos]) || m_s[m_pos] == '-' ||
                 m_s[m_pos] == '+' || m_s[m_pos] == '.' || m_s[m_pos] == 'e' || m_s[m_pos] == 'E')) {
             ++m_pos;
         }
         const std::string_view number = m_s.substr(start, m_pos - start);
         if (!isValidJsonNumber(number)) {
-            t_errors.add(t_path, "expected JSON value");
+            addDynamicError(t_errors, t_basePath, t_path, "expected JSON value");
             if (m_pos == start && m_pos < m_s.size()) {
                 ++m_pos;
             }
@@ -405,39 +450,39 @@ private:
             // Underflow (ERANGE with a finite zero/subnormal result) is still
             // a valid JSON number. Overflow to infinity is not representable.
             if (end != buffer.c_str() + buffer.size() || !std::isfinite(value)) {
-                t_errors.add(t_path, "invalid number");
+                addDynamicError(t_errors, t_basePath, t_path, "invalid number");
                 return;
             }
-            t_target = Value(value);
+            t_target.emplace<double>(value);
         } else if (!number.empty() && number.front() == '-') {
             std::int64_t value = 0;
             const auto result = std::from_chars(number.data(), number.data() + number.size(), value);
             if (result.ec == std::errc() && result.ptr == number.data() + number.size()) {
-                t_target = Value(value);
+                t_target.emplace<std::int64_t>(value);
             } else {
                 std::string buffer(number);
                 char* end = nullptr;
                 const double wideValue = std::strtod(buffer.c_str(), &end);
                 if (end != buffer.c_str() + buffer.size() || !std::isfinite(wideValue)) {
-                    t_errors.add(t_path, "invalid integer");
+                    addDynamicError(t_errors, t_basePath, t_path, "invalid integer");
                     return;
                 }
-                t_target = Value(wideValue);
+                t_target.emplace<double>(wideValue);
             }
         } else {
             std::uint64_t value = 0;
             const auto result = std::from_chars(number.data(), number.data() + number.size(), value);
             if (result.ec == std::errc() && result.ptr == number.data() + number.size()) {
-                t_target = Value(value);
+                t_target.emplace<std::uint64_t>(value);
             } else {
                 std::string buffer(number);
                 char* end = nullptr;
                 const double wideValue = std::strtod(buffer.c_str(), &end);
                 if (end != buffer.c_str() + buffer.size() || !std::isfinite(wideValue)) {
-                    t_errors.add(t_path, "invalid integer");
+                    addDynamicError(t_errors, t_basePath, t_path, "invalid integer");
                     return;
                 }
-                t_target = Value(wideValue);
+                t_target.emplace<double>(wideValue);
             }
         }
     }
@@ -452,6 +497,25 @@ private:
             return false;
         }
         t_out.clear();
+
+        // Most JSON strings contain no escapes. Copy those in one operation
+        // instead of repeatedly growing the destination one character at a
+        // time; fall through to the decoder only for escapes/control bytes.
+        const std::size_t start = m_pos;
+        while (m_pos < m_s.size()) {
+            const char c = m_s[m_pos];
+            if (c == '"') {
+                t_out.assign(m_s.data() + start, m_pos - start);
+                ++m_pos;
+                return true;
+            }
+            if (c == '\\' || static_cast<unsigned char>(c) < 0x20) {
+                break;
+            }
+            ++m_pos;
+        }
+        t_out.append(m_s.data() + start, m_pos - start);
+
         while (m_pos < m_s.size() && m_s[m_pos] != '"') {
             char c = m_s[m_pos];
             if (c == '\\' && m_pos + 1 < m_s.size()) {
@@ -589,7 +653,7 @@ private:
             }
         } else if constexpr (std::is_arithmetic_v<D>) {
             std::size_t start = m_pos;
-            while (m_pos < m_s.size() && (std::isdigit(static_cast<unsigned char>(m_s[m_pos])) || m_s[m_pos] == '-' || m_s[m_pos] == '+' || m_s[m_pos] == '.' || m_s[m_pos] == 'e' || m_s[m_pos] == 'E')) {
+            while (m_pos < m_s.size() && (isDigit(m_s[m_pos]) || m_s[m_pos] == '-' || m_s[m_pos] == '+' || m_s[m_pos] == '.' || m_s[m_pos] == 'e' || m_s[m_pos] == 'E')) {
                 ++m_pos;
             }
             std::string_view numText = m_s.substr(start, m_pos - start);

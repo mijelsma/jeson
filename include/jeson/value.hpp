@@ -18,6 +18,8 @@
 
 namespace jeson {
 
+class Parser;
+
 class Value {
 public:
     using Null = std::nullptr_t;
@@ -67,8 +69,14 @@ public:
     }
 
 private:
+    friend class Parser;
+
+    template <typename T, typename... Args>
+    T& emplace(Args&&... t_args) {
+        return m_value.template emplace<T>(std::forward<Args>(t_args)...);
+    }
+
     Storage m_value;
 };
 
 } // namespace jeson
-
