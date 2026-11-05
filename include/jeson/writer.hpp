@@ -27,6 +27,7 @@
 #include "required.hpp"
 #include "traits.hpp"
 #include "validator.hpp"
+#include "value.hpp"
 
 namespace jeson {
 
@@ -129,7 +130,8 @@ private:
     static void writeNumber(N t_value, std::string& t_out) {
         if constexpr (std::is_floating_point_v<N>) {
             char buf[64];
-            int len = std::snprintf(buf, sizeof(buf), "%g", static_cast<double>(t_value));
+            constexpr const char* format = std::is_same_v<N, float> ? "%.9g" : "%.17g";
+            int len = std::snprintf(buf, sizeof(buf), format, static_cast<double>(t_value));
             t_out.append(buf, len > 0 ? static_cast<std::size_t>(len) : 0);
         } else if constexpr (sizeof(N) == 1 && std::is_integral_v<N>) {
             if constexpr (std::is_signed_v<N>) {
@@ -152,7 +154,9 @@ private:
     static void writeValue(const T& t_value, std::string& t_out, const WriteOptions& t_opts, unsigned t_depth) {
         using D = std::decay_t<T>;
 
-        if constexpr (internal::is_field_v<D>) {
+        if constexpr (std::is_same_v<D, Value>) {
+            writeDynamicValue(t_value, t_out, t_opts, t_depth);
+        } else if constexpr (internal::is_field_v<D>) {
             if constexpr (internal::is_reflectable_aggregate_v<typename D::ValueType>) {
                 writeObject(t_value, t_out, t_opts, t_depth);
             } else {
@@ -206,6 +210,52 @@ private:
         } else {
             static_assert(sizeof(D) == 0, "jeson: unsupported field type - add a branch in Writer::writeValue");
         }
+    }
+
+    static void writeDynamicValue(const Value& t_value, std::string& t_out, const WriteOptions& t_opts, unsigned t_depth) {
+        std::visit(
+            [&](const auto& value) {
+                using D = std::decay_t<decltype(value)>;
+                if constexpr (std::is_same_v<D, Value::Object>) {
+                    t_out += '{';
+                    for (std::size_t i = 0; i < value.size(); ++i) {
+                        if (i != 0) {
+                            t_out += ',';
+                        }
+                        writeIndent(t_out, t_opts, t_depth + 1);
+                        writeEscapedString(value[i].first, t_out);
+                        t_out += ':';
+                        if (t_opts.pretty) {
+                            t_out += ' ';
+                        }
+                        writeDynamicValue(value[i].second, t_out, t_opts, t_depth + 1);
+                    }
+                    if (!value.empty()) {
+                        writeIndent(t_out, t_opts, t_depth);
+                    }
+                    t_out += '}';
+                } else if constexpr (std::is_same_v<D, Value::Array>) {
+                    if (value.empty()) {
+                        t_out += "[]";
+                        return;
+                    }
+                    t_out += '[';
+                    for (std::size_t i = 0; i < value.size(); ++i) {
+                        if (i != 0) {
+                            t_out += ',';
+                        }
+                        writeIndent(t_out, t_opts, t_depth + 1);
+                        writeDynamicValue(value[i], t_out, t_opts, t_depth + 1);
+                    }
+                    writeIndent(t_out, t_opts, t_depth);
+                    t_out += ']';
+                } else if constexpr (std::is_same_v<D, Value::Null>) {
+                    t_out += "null";
+                } else {
+                    writeValue(value, t_out, t_opts, t_depth);
+                }
+            },
+            t_value.storage());
     }
 
     /// Serializes t_value's reflected members as a JSON object.

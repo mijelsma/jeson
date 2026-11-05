@@ -20,7 +20,7 @@ if (errors) {
 }
 ```
 
-There is no registration macro, generated schema, runtime type table, DOM, exception-based error path, or compiled library to link.
+The normal typed path has no registration macro, generated schema, runtime type table, intermediate DOM, exception-based error path, or compiled library to link. An opt-in `jeson::Value` DOM is available for schema-less documents and generic tooling.
 
 ## What it supports
 
@@ -34,6 +34,7 @@ There is no registration macro, generated schema, runtime type table, DOM, excep
 - Accumulated, path-aware errors instead of stopping at the first bad field
 - Compact, pretty, and omit-null serialization
 - Lenient handling of unknown keys for forward/backward-compatible device configuration
+- Optional insertion-ordered `jeson::Value` DOM for schema-less JSON and benchmark/tooling adapters
 
 JESON parses directly into the destination object in one recursive pass. It does use the standard containers selected by your model—such as `std::string` and `std::vector`—so “header-only” does not mean “zero allocation.”
 
@@ -134,6 +135,19 @@ jeson::toJson(settings, jeson::compact_omit_nulls);
 jeson::toJson(settings, jeson::WriteOptions{true, 4, true});
 ```
 
+For documents whose schema is not known at compile time, use the optional dynamic value API:
+
+```cpp
+jeson::Value document;
+auto errors = jeson::parse(R"({"device":"sensor-01","samples":[21.5,22.0]})", document);
+if (errors) {
+    auto compact = jeson::toJson(document);
+    auto formatted = jeson::toJson(document, jeson::pretty);
+}
+```
+
+`Value::Object` is an insertion-ordered vector of key/value pairs. The typed API remains the recommended embedded path because it avoids constructing this generic tree.
+
 See the focused programs in [`examples/`](examples) and the [feature guide](docs/features.md) for enums, patches, validation, writer options, and error handling. `examples/ArduinoBasic` is ready to open from an Arduino-compatible installation.
 
 ## Behavior worth knowing
@@ -165,6 +179,12 @@ ctest --test-dir build --output-on-failure
 ```
 
 The top-level build includes all examples and tests. When JESON is consumed with `add_subdirectory` or `FetchContent`, those are disabled by default. Override with `JESON_BUILD_TESTS` or `JESON_BUILD_EXAMPLES`.
+
+## Benchmarks
+
+The reproducible cross-library benchmark lives in the JESON-maintained fork of [nativejson-benchmark](https://github.com/mijelsma/nativejson-benchmark). It compares JESON with cJSON, reflect-cpp, RapidJSON, nlohmann/json, and ArduinoJson for parsing, stringify, pretty-print, parse allocations/peak memory, conformance, and per-adapter binary size.
+
+JESON and reflect-cpp use their dynamic `Value`/`Generic` types in that DOM benchmark. This is deliberately separate from JESON's usual direct-to-typed-model path. Exact dependency commits, compiler flags, commands, and result interpretation are recorded in the benchmark repository rather than embedding machine-specific numbers here.
 
 ## License
 

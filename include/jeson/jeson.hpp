@@ -17,6 +17,7 @@
 #include "string_literal.hpp"
 #include "traits.hpp"
 #include "validator.hpp"
+#include "value.hpp"
 #include "version.hpp"
 #include "writer.hpp"
 

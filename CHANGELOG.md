@@ -4,6 +4,10 @@ All notable changes to JESON are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+- Added the opt-in `jeson::Value` dynamic DOM for schema-less documents and generic tooling.
+- Added nativejson-benchmark integration for performance, memory, conformance, and code-size comparisons.
+- Emit floating-point values with enough significant digits for reliable round trips.
+
 ## [0.1.0] - 2026-11-05
 
 - Initial public project structure for the header-only library.

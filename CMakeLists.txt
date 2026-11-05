@@ -51,7 +51,7 @@ if(JESON_BUILD_TESTS)
 endif()
 
 if(JESON_BUILD_EXAMPLES)
-    foreach(example IN ITEMS simple nested_and_arrays enum validator writer errors patch advanced)
+    foreach(example IN ITEMS simple nested_and_arrays enum validator writer errors patch advanced value)
         add_executable(jeson_example_${example} examples/${example}_example.cpp)
         target_link_libraries(jeson_example_${example} PRIVATE jeson::jeson)
     endforeach()

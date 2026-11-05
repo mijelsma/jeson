@@ -33,6 +33,7 @@
 #include "required.hpp"
 #include "traits.hpp"
 #include "validator.hpp"
+#include "value.hpp"
 
 namespace jeson {
 
@@ -286,6 +287,145 @@ private:
         }
     }
 
+    void parseDynamicValue(Value& t_target, const std::string& t_path, ParseErrors& t_errors) {
+        skipWs();
+        if (consumeLiteral("null")) {
+            t_target = Value(nullptr);
+            return;
+        }
+        if (consumeLiteral("true")) {
+            t_target = Value(true);
+            return;
+        }
+        if (consumeLiteral("false")) {
+            t_target = Value(false);
+            return;
+        }
+        if (peek() == '"') {
+            std::string value;
+            if (!parseRawString(value)) {
+                t_errors.add(t_path, "invalid string");
+                return;
+            }
+            t_target = Value(std::move(value));
+            return;
+        }
+        if (consume('[')) {
+            Value::Array values;
+            skipWs();
+            if (consume(']')) {
+                t_target = Value(std::move(values));
+                return;
+            }
+            std::size_t index = 0;
+            while (true) {
+                Value value;
+                parseDynamicValue(value, t_path + "/" + std::to_string(index), t_errors);
+                values.push_back(std::move(value));
+                ++index;
+                skipWs();
+                if (consume(',')) {
+                    skipWs();
+                    if (peek() == ']') {
+                        t_errors.add(t_path, "expected array value after ','");
+                        consume(']');
+                        break;
+                    }
+                    continue;
+                }
+                if (!consume(']')) {
+                    t_errors.add(t_path, "expected ',' or ']'");
+                }
+                break;
+            }
+            t_target = Value(std::move(values));
+            return;
+        }
+        if (consume('{')) {
+            Value::Object values;
+            skipWs();
+            if (consume('}')) {
+                t_target = Value(std::move(values));
+                return;
+            }
+            while (true) {
+                std::string key;
+                if (!parseRawString(key)) {
+                    t_errors.add(t_path, "expected object key");
+                    break;
+                }
+                skipWs();
+                if (!consume(':')) {
+                    t_errors.add(t_path, "expected ':' after key '" + key + "'");
+                    break;
+                }
+                skipWs();
+                Value value;
+                parseDynamicValue(value, joinPath(t_path, key), t_errors);
+                values.emplace_back(std::move(key), std::move(value));
+                skipWs();
+                if (consume(',')) {
+                    skipWs();
+                    if (peek() == '}') {
+                        t_errors.add(t_path, "expected object member after ','");
+                        consume('}');
+                        break;
+                    }
+                    continue;
+                }
+                if (!consume('}')) {
+                    t_errors.add(t_path, "expected ',' or '}'");
+                }
+                break;
+            }
+            t_target = Value(std::move(values));
+            return;
+        }
+
+        const std::size_t start = m_pos;
+        while (m_pos < m_s.size() &&
+               (std::isdigit(static_cast<unsigned char>(m_s[m_pos])) || m_s[m_pos] == '-' ||
+                m_s[m_pos] == '+' || m_s[m_pos] == '.' || m_s[m_pos] == 'e' || m_s[m_pos] == 'E')) {
+            ++m_pos;
+        }
+        const std::string_view number = m_s.substr(start, m_pos - start);
+        if (!isValidJsonNumber(number)) {
+            t_errors.add(t_path, "expected JSON value");
+            if (m_pos == start && m_pos < m_s.size()) {
+                ++m_pos;
+            }
+            return;
+        }
+
+        if (number.find_first_of(".eE") != std::string_view::npos) {
+            std::string buffer(number);
+            char* end = nullptr;
+            errno = 0;
+            const double value = std::strtod(buffer.c_str(), &end);
+            if (end != buffer.c_str() + buffer.size() || errno == ERANGE || !std::isfinite(value)) {
+                t_errors.add(t_path, "invalid number");
+                return;
+            }
+            t_target = Value(value);
+        } else if (!number.empty() && number.front() == '-') {
+            std::int64_t value = 0;
+            const auto result = std::from_chars(number.data(), number.data() + number.size(), value);
+            if (result.ec != std::errc() || result.ptr != number.data() + number.size()) {
+                t_errors.add(t_path, "invalid integer");
+                return;
+            }
+            t_target = Value(value);
+        } else {
+            std::uint64_t value = 0;
+            const auto result = std::from_chars(number.data(), number.data() + number.size(), value);
+            if (result.ec != std::errc() || result.ptr != number.data() + number.size()) {
+                t_errors.add(t_path, "invalid integer");
+                return;
+            }
+            t_target = Value(value);
+        }
+    }
+
     // ---- leaf parsers --------------------------------------------------
 
     /// Parses one JSON string literal (including escape decoding) into
@@ -364,7 +504,9 @@ private:
     void parseValue(T& t_target, const std::string& t_path, ParseErrors& t_errors) {
         using D = std::decay_t<T>;
 
-        if constexpr (internal::is_field_v<D>) {
+        if constexpr (std::is_same_v<D, Value>) {
+            parseDynamicValue(t_target, t_path, t_errors);
+        } else if constexpr (internal::is_field_v<D>) {
             if constexpr (internal::is_reflectable_aggregate_v<typename D::ValueType>) {
                 // Field<Name, Struct, true> - publicly inherits Struct, so
                 // t_target itself decomposes correctly (reflect.hpp peels

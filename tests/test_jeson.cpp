@@ -1318,3 +1318,63 @@ describe("ParseErrors::merge()", []() {
         expect(a.list().size()).toBe(1u);
     });
 });
+
+// =========================================================================
+// value.hpp - opt-in schema-less DOM for generic tooling
+// =========================================================================
+describe("jeson::Value dynamic JSON documents", []() {
+    it("[positive] parses every JSON value kind while preserving object order", []() {
+        jeson::Value value;
+        const auto errors = jeson::parse(
+            R"({"null":null,"bool":true,"signed":-2,"unsigned":3,"real":1.25,"text":"ok","array":[1,false],"object":{"x":1}})",
+            value);
+
+        expect(errors.ok()).toBe(true);
+        expect(value.is<jeson::Value::Object>()).toBe(true);
+        const auto& object = value.as<jeson::Value::Object>();
+        expect(object.size()).toBe(8u);
+        expect(object[0].first).toBe(std::string("null"));
+        expect(object[0].second.is<jeson::Value::Null>()).toBe(true);
+        expect(object[1].second.as<bool>()).toBe(true);
+        expect(object[2].second.as<std::int64_t>()).toBe(-2);
+        expect(object[3].second.as<std::uint64_t>()).toBe(3u);
+        expect(object[4].second.as<double>() == 1.25).toBe(true);
+        expect(object[5].second.as<std::string>()).toBe(std::string("ok"));
+        expect(object[6].second.as<jeson::Value::Array>().size()).toBe(2u);
+        expect(object[7].second.as<jeson::Value::Object>().size()).toBe(1u);
+    });
+
+    it("[positive] round-trips dynamic objects, arrays, scalars, and Unicode", []() {
+        const std::vector<std::string> documents = {
+            R"({"message":"\u20ac","items":[null,true,false,-1,2,3.5]})",
+            R"([1,{"nested":[]}])",
+            R"("root string")",
+            R"(42)",
+            R"(null)",
+        };
+
+        for (const auto& document : documents) {
+            jeson::Value first;
+            expect(jeson::parse(document, first).ok()).toBe(true);
+            const std::string compact = jeson::toJson(first);
+
+            jeson::Value second;
+            expect(jeson::parse(compact, second).ok()).toBe(true);
+            expect(jeson::toJson(second)).toBe(compact);
+        }
+    });
+
+    it("[positive] pretty-prints a dynamic document", []() {
+        jeson::Value value;
+        expect(jeson::parse(R"({"a":[1,2]})", value).ok()).toBe(true);
+        expect(jeson::toJson(value, jeson::pretty))
+            .toBe(std::string("{\n  \"a\": [\n    1,\n    2\n  ]\n}"));
+    });
+
+    it("[negative] rejects malformed schema-less documents", []() {
+        for (const std::string input : {"[1,]", "{\"a\":1,}", "{\"a\" 1}", "+1", "tru"}) {
+            jeson::Value value;
+            expect(jeson::parse(input, value).ok()).toBe(false);
+        }
+    });
+});
