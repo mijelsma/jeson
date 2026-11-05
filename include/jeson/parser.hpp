@@ -402,7 +402,9 @@ private:
             char* end = nullptr;
             errno = 0;
             const double value = std::strtod(buffer.c_str(), &end);
-            if (end != buffer.c_str() + buffer.size() || errno == ERANGE || !std::isfinite(value)) {
+            // Underflow (ERANGE with a finite zero/subnormal result) is still
+            // a valid JSON number. Overflow to infinity is not representable.
+            if (end != buffer.c_str() + buffer.size() || !std::isfinite(value)) {
                 t_errors.add(t_path, "invalid number");
                 return;
             }
@@ -410,19 +412,33 @@ private:
         } else if (!number.empty() && number.front() == '-') {
             std::int64_t value = 0;
             const auto result = std::from_chars(number.data(), number.data() + number.size(), value);
-            if (result.ec != std::errc() || result.ptr != number.data() + number.size()) {
-                t_errors.add(t_path, "invalid integer");
-                return;
+            if (result.ec == std::errc() && result.ptr == number.data() + number.size()) {
+                t_target = Value(value);
+            } else {
+                std::string buffer(number);
+                char* end = nullptr;
+                const double wideValue = std::strtod(buffer.c_str(), &end);
+                if (end != buffer.c_str() + buffer.size() || !std::isfinite(wideValue)) {
+                    t_errors.add(t_path, "invalid integer");
+                    return;
+                }
+                t_target = Value(wideValue);
             }
-            t_target = Value(value);
         } else {
             std::uint64_t value = 0;
             const auto result = std::from_chars(number.data(), number.data() + number.size(), value);
-            if (result.ec != std::errc() || result.ptr != number.data() + number.size()) {
-                t_errors.add(t_path, "invalid integer");
-                return;
+            if (result.ec == std::errc() && result.ptr == number.data() + number.size()) {
+                t_target = Value(value);
+            } else {
+                std::string buffer(number);
+                char* end = nullptr;
+                const double wideValue = std::strtod(buffer.c_str(), &end);
+                if (end != buffer.c_str() + buffer.size() || !std::isfinite(wideValue)) {
+                    t_errors.add(t_path, "invalid integer");
+                    return;
+                }
+                t_target = Value(wideValue);
             }
-            t_target = Value(value);
         }
     }
 

@@ -13,6 +13,7 @@
  */
 #pragma once
 
+#include <charconv>
 #include <cstdio>
 #include <optional>
 #include <string>
@@ -112,14 +113,9 @@ private:
      * @brief Appends t_value's decimal representation to t_out.
      *
      * Integers go through std::to_string (locale-independent per the
-     * standard, no streams involved). Floating point goes through
-     * snprintf ("%g") rather than std::to_chars: matches the parser's own
-     * std::strtod choice for the same portability reason (not every
-     * libstdc++ shipped by every ESP-IDF toolchain version has full
-     * floating-point std::to_chars support yet) - both assume the process
-     * never changes away from the "C" locale, which is already true of
-     * strtod on the parse side, so this doesn't add a new assumption,
-     * just stays consistent with it.
+     * standard, no streams involved). Floating point uses std::to_chars for
+     * the shortest locale-independent representation that round-trips to
+     * the same value. snprintf remains as a conversion-failure fallback.
      *
      * uint8_t/int8_t are explicitly promoted before formatting: they're
      * typically char typedefs, and both std::to_string and iostream
@@ -130,9 +126,24 @@ private:
     static void writeNumber(N t_value, std::string& t_out) {
         if constexpr (std::is_floating_point_v<N>) {
             char buf[64];
-            constexpr const char* format = std::is_same_v<N, float> ? "%.9g" : "%.17g";
-            int len = std::snprintf(buf, sizeof(buf), format, static_cast<double>(t_value));
-            t_out.append(buf, len > 0 ? static_cast<std::size_t>(len) : 0);
+            const auto result = std::to_chars(buf, buf + sizeof(buf), t_value, std::chars_format::general);
+            if (result.ec == std::errc()) {
+                const std::string_view formatted(buf, static_cast<std::size_t>(result.ptr - buf));
+                const auto exponent = formatted.find_first_of("eE");
+                if (exponent != std::string_view::npos && exponent + 1 < formatted.size() && formatted[exponent + 1] == '+') {
+                    t_out.append(formatted.substr(0, exponent + 1));
+                    t_out.append(formatted.substr(exponent + 2));
+                } else {
+                    t_out.append(formatted);
+                }
+                if (formatted.find_first_of(".eE") == std::string_view::npos) {
+                    t_out += ".0";
+                }
+            } else {
+                constexpr const char* format = std::is_same_v<N, float> ? "%.9g" : "%.17g";
+                const int len = std::snprintf(buf, sizeof(buf), format, static_cast<double>(t_value));
+                t_out.append(buf, len > 0 ? static_cast<std::size_t>(len) : 0);
+            }
         } else if constexpr (sizeof(N) == 1 && std::is_integral_v<N>) {
             if constexpr (std::is_signed_v<N>) {
                 t_out += std::to_string(static_cast<int>(t_value));

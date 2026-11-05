@@ -1371,6 +1371,20 @@ describe("jeson::Value dynamic JSON documents", []() {
             .toBe(std::string("{\n  \"a\": [\n    1,\n    2\n  ]\n}"));
     });
 
+    it("[positive] accepts finite subnormals and represents oversized integers as doubles", []() {
+        jeson::Value value;
+        expect(jeson::parse("[4.9406564584124654e-324,18446744073709551616]", value).ok()).toBe(true);
+        const auto& values = value.as<jeson::Value::Array>();
+        expect(values[0].is<double>()).toBe(true);
+        expect(values[1].is<double>()).toBe(true);
+    });
+
+    it("[positive] emits shortest floating-point text while preserving its JSON number kind", []() {
+        expect(jeson::toJson(jeson::Value(1.2345))).toBe(std::string("1.2345"));
+        expect(jeson::toJson(jeson::Value(0.0))).toBe(std::string("0.0"));
+        expect(jeson::toJson(jeson::Value(-0.0))).toBe(std::string("-0.0"));
+    });
+
     it("[negative] rejects malformed schema-less documents", []() {
         for (const std::string input : {"[1,]", "{\"a\":1,}", "{\"a\" 1}", "+1", "tru"}) {
             jeson::Value value;
