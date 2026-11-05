@@ -1,6 +1,14 @@
 # JESON
 
-JESON is a small, header-only C++20 JSON library for typed embedded configuration, commands, and telemetry. Its schema syntax is inspired by [reflect-cpp](https://github.com/getml/reflect-cpp) and Python's Pydantic: describe the wire name and C++ type once, then parse, validate, access, and serialize the same object.
+JESON is a small, header-only C++20 JSON library built first for constrained
+firmware: ESP32, Nordic nRF/Zephyr, and similar devices where flash, RAM, heap
+traffic, and integration effort all matter. It keeps the convenient typed
+model style of [reflect-cpp](https://github.com/getml/reflect-cpp) and Python's
+Pydantic without requiring a large reflection framework or a generic JSON tree
+for normal configuration, command, and telemetry messages.
+
+Describe the JSON name, C++ type, default, and validation rules in one place;
+then parse, validate, use, and serialize the same ordinary C++ object:
 
 ```cpp
 #include <jeson/jeson.hpp>
@@ -13,14 +21,36 @@ struct Device {
 };
 
 Device device;
-auto errors = jeson::parse(R"({"id":"sensor-01","port":9000})", device);
-if (errors) {
+auto result = jeson::parse(R"({"id":"sensor-01","port":9000})", device);
+if (result) {
     device.port = 9001;              // ordinary assignment; no .value()
     auto json = jeson::toJson(device, jeson::pretty);
 }
 ```
 
 The normal typed path has no registration macro, generated schema, runtime type table, intermediate DOM, exception-based error path, or compiled library to link. An opt-in `jeson::Value` DOM is available for schema-less documents and generic tooling.
+
+## Designed for constrained firmware
+
+- **Small typed path:** JSON is parsed directly into the destination aggregate;
+  an intermediate DOM and a second model-mapping pass are not required.
+- **Low integration cost:** copy one header folder or use the supplied metadata
+  for ESP-IDF, Zephyr, PlatformIO, Arduino, CMake, and desktop build systems.
+- **Readable application code:** fields behave like their wrapped type, so
+  `config.interval = 1000` and `if (config.enabled)` work without `.get()` or
+  `.value()` boilerplate.
+- **Schema where it is useful:** required keys, defaults, nested models, enums,
+  constraints, optionals, vectors, and partial updates live next to the field.
+- **Useful failure reports:** syntax, type, and validation errors are
+  accumulated with JSON paths instead of disappearing behind a boolean result.
+- **A controlled escape hatch:** use `jeson::Value` when the document really is
+  dynamic; firmware with a known schema does not pay for that API by default.
+
+JESON deliberately uses familiar standard C++ types rather than inventing an
+allocator or container ecosystem. `std::string` and `std::vector` can allocate,
+so exact RAM and flash usage still depends on the model, standard library,
+compiler flags, and target toolchain. Measure the final firmware image on the
+actual device.
 
 ## What it supports
 
@@ -36,7 +66,7 @@ The normal typed path has no registration macro, generated schema, runtime type 
 - Lenient handling of unknown keys for forward/backward-compatible device configuration
 - Optional insertion-ordered `jeson::Value` DOM for schema-less JSON and benchmark/tooling adapters
 
-JESON parses directly into the destination object in one recursive pass. It does use the standard containers selected by your model—such as `std::string` and `std::vector`—so “header-only” does not mean “zero allocation.”
+JESON parses directly into the destination object in one recursive pass.
 
 ## Requirements
 
@@ -96,6 +126,11 @@ The repository also ships `meson.build`, `BUILD.bazel`, `MODULE.bazel`, `conanfi
 
 ## Model syntax
 
+The model is the mapping. `Field<"device_id", T>` connects the wire name to the
+C++ member, while wrappers such as `Required<T>` and `Validator<T, ...>` add
+input rules. There is no second registration list to keep synchronized and no
+handwritten `json["device_id"]` conversion function.
+
 ```cpp
 enum class Mode { OFF, ECO, COMFORT };
 
@@ -113,6 +148,47 @@ struct Settings {
     jeson::Field<"channels", std::vector<int>> channels;
 };
 ```
+
+Once parsed, these are normal members with normal nested access:
+
+```cpp
+Settings settings;
+auto result = jeson::parse(payload, settings);
+
+if (result) {
+    settings.sampleRate = 300;
+    settings.network.ssid = "workshop";
+    send(jeson::toJson(settings, jeson::compact_omit_nulls));
+} else {
+    log(result.toString());
+}
+```
+
+Omitted ordinary fields retain their C++ defaults, `Required<T>` makes presence
+mandatory, and unknown input keys are ignored for forward-compatible firmware.
+The same model is used for serialization, so field names and enum conversion do
+not have to be implemented twice.
+
+## How the API compares
+
+These libraries solve overlapping but different problems. JESON is optimized
+for known-schema firmware messages; it is not intended to replace every DOM or
+streaming API.
+
+| Library | Typical programming model | Difference from JESON |
+|---|---|---|
+| **JESON** | Declare a typed aggregate and parse directly into it; optional `Value` DOM | Validation, defaults, mapping, and serialization share one compact model. Requires C++20; chosen standard containers can allocate. |
+| **reflect-cpp** | Broad compile-time reflection and serialization across JSON and other formats | Closest high-level style and much broader in scope. JESON intentionally offers a smaller JSON-only surface for firmware. |
+| **ArduinoJson** | Embedded-focused `JsonDocument`/variant API | Excellent dynamic document API and allocator control. Typed schema rules and model validation normally remain application code. |
+| **RapidJSON** | Fast DOM, SAX, and writer APIs with allocator control | More low-level control and streaming options. Mapping a document into a typed application model is generally manual. |
+| **nlohmann/json** | Expressive STL-like dynamic JSON value | Very convenient general-purpose DOM and large ecosystem. JESON avoids making that generic tree the normal typed path. |
+| **cJSON** | Portable C DOM made of nodes and pointers | Useful from C and easy to port. Typed conversion, validation, ownership, and cleanup are explicit application responsibilities. |
+
+The [JESON nativejson benchmark](https://github.com/mijelsma/nativejson-benchmark)
+measures a reproducibly pinned version of all six libraries. Its binary-size,
+speed, memory, and conformance results use comparable schema-less DOM adapters;
+they do not measure JESON's direct-to-model advantage or prove one library is
+best for every workload.
 
 Parsing keeps defaults for omitted ordinary fields and reports all validation failures:
 
