@@ -66,3 +66,27 @@ vcpkg_installed/
 # test output & cache
 Testing/
 .cache/
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/
+*.code-workspace
+
+# Other supported build systems
+cmake-build-*/
+meson-private/
+meson-logs/
+meson-info/
+_build/
+bazel-*
+.conan2/
+__pycache__/
+*.py[cod]
+
+# Coverage and profiling
+coverage/
+*.gcda
+*.gcno
+*.profraw
+*.profdata

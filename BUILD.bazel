@@ -1,0 +1,14 @@
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "jeson",
+    hdrs = glob(["include/jeson/*.hpp"]),
+    includes = ["include"],
+)
+
+cc_test(
+    name = "smoke_test",
+    srcs = ["tests/smoke.cpp"],
+    deps = [":jeson"],
+)
+

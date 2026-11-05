@@ -1,0 +1,26 @@
+{
+  "name": "JESON",
+  "version": "0.1.0",
+  "description": "Lightweight, typed JSON for embedded and desktop C++20",
+  "keywords": ["json", "embedded", "serialization", "validation", "reflection"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mijelsma/jeson.git"
+  },
+  "authors": [
+    {
+      "name": "Michel Jelsma",
+      "maintainer": true
+    }
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/mijelsma/jeson",
+  "frameworks": "*",
+  "platforms": "*",
+  "headers": "jeson/jeson.hpp",
+  "build": {
+    "includeDir": "include",
+    "flags": ["-std=gnu++20"]
+  }
+}
+

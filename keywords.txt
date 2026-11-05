@@ -1,0 +1,17 @@
+JESON_VERSION_STRING	LITERAL1
+jeson	KEYWORD1
+Field	KEYWORD2
+Required	KEYWORD2
+Validator	KEYWORD2
+Minimum	KEYWORD2
+Maximum	KEYWORD2
+MinSize	KEYWORD2
+MaxSize	KEYWORD2
+Patch	KEYWORD2
+ParseErrors	KEYWORD2
+WriteOptions	KEYWORD2
+parse	KEYWORD2
+toJson	KEYWORD2
+pretty	LITERAL1
+compact_omit_nulls	LITERAL1
+

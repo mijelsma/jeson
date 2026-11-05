@@ -1,0 +1,11 @@
+version: "0.1.0"
+description: Lightweight, typed JSON for embedded and desktop C++20
+url: https://github.com/mijelsma/jeson
+repository: https://github.com/mijelsma/jeson.git
+license: MIT
+files:
+  include:
+    - "include/**"
+    - "CMakeLists.txt"
+    - "LICENSE"
+

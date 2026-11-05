@@ -1,0 +1,10 @@
+menu "JESON"
+
+config JESON
+    bool "JESON typed JSON headers"
+    default y
+    help
+      Makes the JESON C++20 typed JSON headers available to the application.
+
+endmenu
+
