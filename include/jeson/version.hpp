@@ -5,9 +5,9 @@
 #pragma once
 
 #define JESON_VERSION_MAJOR 0
-#define JESON_VERSION_MINOR 1
+#define JESON_VERSION_MINOR 2
 #define JESON_VERSION_PATCH 0
-#define JESON_VERSION_STRING "0.1.0"
+#define JESON_VERSION_STRING "0.2.0"
 
 namespace jeson {
 
@@ -17,4 +17,3 @@ inline constexpr unsigned versionPatch = JESON_VERSION_PATCH;
 inline constexpr const char* versionString = JESON_VERSION_STRING;
 
 } // namespace jeson
-

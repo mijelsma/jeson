@@ -28,7 +28,7 @@ if (result) {
 }
 ```
 
-The normal typed path has no registration macro, generated schema, runtime type table, intermediate DOM, exception-based error path, or compiled library to link. An opt-in `jeson::Value` DOM is available for schema-less documents and generic tooling.
+The normal typed path has no registration macro, generated schema, runtime type table, intermediate DOM, exception-based error path, or compiled library to link. For schema-less work, JESON offers both a convenient mutable `jeson::Value` tree and a lower-allocation, read-oriented `jeson::CompactDocument`.
 
 ## Designed for constrained firmware
 
@@ -43,8 +43,9 @@ The normal typed path has no registration macro, generated schema, runtime type 
   constraints, optionals, vectors, and partial updates live next to the field.
 - **Useful failure reports:** syntax, type, and validation errors are
   accumulated with JSON paths instead of disappearing behind a boolean result.
-- **A controlled escape hatch:** use `jeson::Value` when the document really is
-  dynamic; firmware with a known schema does not pay for that API by default.
+- **Controlled escape hatches:** use mutable `jeson::Value` for general dynamic
+  work, or read-oriented `jeson::CompactDocument` when a generic document must
+  fit into less RAM. Known-schema firmware should keep using the typed path.
 
 JESON deliberately uses familiar standard C++ types rather than inventing an
 allocator or container ecosystem. `std::string` and `std::vector` can allocate,
@@ -64,7 +65,8 @@ actual device.
 - Accumulated, path-aware errors instead of stopping at the first bad field
 - Compact, pretty, and omit-null serialization
 - Lenient handling of unknown keys for forward/backward-compatible device configuration
-- Optional insertion-ordered `jeson::Value` DOM for schema-less JSON and benchmark/tooling adapters
+- Optional insertion-ordered `jeson::Value` DOM for mutable schema-less JSON
+- Optional paged `jeson::CompactDocument` DOM for low-allocation, read-oriented schema-less JSON
 
 JESON parses directly into the destination object in one recursive pass.
 
@@ -95,7 +97,7 @@ include(FetchContent)
 FetchContent_Declare(
     jeson
     GIT_REPOSITORY https://github.com/mijelsma/jeson.git
-    GIT_TAG 0.1.0
+    GIT_TAG 0.2.0
 )
 FetchContent_MakeAvailable(jeson)
 
@@ -111,7 +113,7 @@ Use the repository as a component (for example under `components/jeson`) or decl
 ### PlatformIO
 
 ```ini
-lib_deps = https://github.com/mijelsma/jeson.git#0.1.0
+lib_deps = https://github.com/mijelsma/jeson.git#0.2.0
 build_unflags = -std=gnu++11
 build_flags = -std=gnu++20
 ```
@@ -177,7 +179,7 @@ streaming API.
 
 | Library | Typical programming model | Difference from JESON |
 |---|---|---|
-| **JESON** | Declare a typed aggregate and parse directly into it; optional `Value` DOM | Validation, defaults, mapping, and serialization share one compact model. Requires C++20; chosen standard containers can allocate. |
+| **JESON** | Declare a typed aggregate and parse directly into it; optional mutable and compact DOMs | Validation, defaults, mapping, and serialization share one compact model. Requires C++20; chosen standard containers can allocate. |
 | **reflect-cpp** | Broad compile-time reflection and serialization across JSON and other formats | Closest high-level style and much broader in scope. JESON intentionally offers a smaller JSON-only surface for firmware. |
 | **ArduinoJson** | Embedded-focused `JsonDocument`/variant API | Excellent dynamic document API and allocator control. Typed schema rules and model validation normally remain application code. |
 | **RapidJSON** | Fast DOM, SAX, and writer APIs with allocator control | More low-level control and streaming options. Mapping a document into a typed application model is generally manual. |
@@ -211,7 +213,7 @@ jeson::toJson(settings, jeson::compact_omit_nulls);
 jeson::toJson(settings, jeson::WriteOptions{true, 4, true});
 ```
 
-For documents whose schema is not known at compile time, use the optional dynamic value API:
+For documents whose schema is not known at compile time and must be mutated, use the dynamic value API:
 
 ```cpp
 jeson::Value document;
@@ -223,6 +225,29 @@ if (errors) {
 ```
 
 `Value::Object` is an insertion-ordered vector of key/value pairs. The typed API remains the recommended embedded path because it avoids constructing this generic tree.
+
+When the document is schema-less but read-mostly, `CompactDocument` stores
+24-byte nodes and strings in pages instead of allocating an STL container at
+every level:
+
+```cpp
+jeson::CompactDocument document;
+auto errors = jeson::parse(payload, document);
+if (errors) {
+    auto root = document.root();
+    log(root["device"].stringValue());
+    for (auto sample : root["samples"].children()) {
+        consume(sample.doubleValue());
+    }
+    send(jeson::toJson(document));
+}
+```
+
+`CompactValue` is a small read-only view; the document owns all decoded text,
+so the input buffer may be released after parsing. Views are invalidated by
+clearing, re-parsing, moving, or destroying their document. The default page
+sizes favor embedded messages and can be tuned before including JESON with
+`JESON_COMPACT_NODE_PAGE_NODES` and `JESON_COMPACT_STRING_PAGE_BYTES`.
 
 See the focused programs in [`examples/`](examples) and the [feature guide](docs/features.md) for enums, patches, validation, writer options, and error handling. `examples/ArduinoBasic` is ready to open from an Arduino-compatible installation.
 
@@ -260,7 +285,12 @@ The top-level build includes all examples and tests. When JESON is consumed with
 
 The reproducible cross-library benchmark lives in the JESON-maintained fork of [nativejson-benchmark](https://github.com/mijelsma/nativejson-benchmark). It compares JESON with cJSON, reflect-cpp, RapidJSON, nlohmann/json, and ArduinoJson for parsing, stringify, pretty-print, parse allocations/peak memory, conformance, and per-adapter binary size.
 
-JESON and reflect-cpp use their dynamic `Value`/`Generic` types in that DOM benchmark. This is deliberately separate from JESON's usual direct-to-typed-model path. Exact dependency commits, compiler flags, commands, and result interpretation are recorded in the benchmark repository rather than embedding machine-specific numbers here.
+The DOM lane now measures both JESON dynamic representations: mutable `Value`
+and read-oriented `CompactDocument`. A separate application-model lane compares
+JESON and reflect-cpp native typed parsing with the DOM-plus-manual-mapping path
+required by the other pinned adapters. Exact dependency commits, compiler
+flags, commands, and result interpretation are recorded in the benchmark
+repository rather than embedding machine-specific numbers here.
 
 ## License
 

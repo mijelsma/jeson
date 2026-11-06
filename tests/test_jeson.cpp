@@ -1401,3 +1401,92 @@ describe("jeson::Value dynamic JSON documents", []() {
         expect(errors.list().front().path).toBe(std::string("/outer/1/bad"));
     });
 });
+
+// =========================================================================
+// compact_document.hpp - low-allocation schema-less DOM
+// =========================================================================
+describe("jeson::CompactDocument", []() {
+    it("[positive] exposes every JSON kind through lightweight views", []() {
+        jeson::CompactDocument document;
+        const auto errors = jeson::parse(
+            R"({"null":null,"bool":true,"signed":-2,"unsigned":3,"real":1.25,"text":"ok","array":[1,false],"object":{"x":1}})",
+            document);
+
+        expect(errors.ok()).toBe(true);
+        const auto root = document.root();
+        expect(root.isObject()).toBe(true);
+        expect(root.size()).toBe(8u);
+        expect(root["null"].isNull()).toBe(true);
+        expect(root["bool"].boolValue()).toBe(true);
+        expect(root["signed"].int64Value()).toBe(-2);
+        expect(root["unsigned"].uint64Value()).toBe(3u);
+        expect(root["real"].doubleValue() == 1.25).toBe(true);
+        expect(root["text"].stringValue() == "ok").toBe(true);
+        expect(root["array"][0].uint64Value()).toBe(1u);
+        expect(root["array"][1].boolValue(true)).toBe(false);
+        expect(root["object"]["x"].uint64Value()).toBe(1u);
+        expect(root["missing"].valid()).toBe(false);
+    });
+
+    it("[positive] iterates array and object children in source order", []() {
+        jeson::CompactDocument document;
+        expect(jeson::parse(R"({"a":1,"b":2,"c":3})", document).ok()).toBe(true);
+
+        std::string keys;
+        std::uint64_t total = 0;
+        for (const auto child : document.root().children()) {
+            keys += child.key();
+            total += child.uint64Value();
+        }
+        expect(keys).toBe(std::string("abc"));
+        expect(total).toBe(6u);
+    });
+
+    it("[positive] owns decoded strings including values larger than one page", []() {
+        const std::string longText(5000, 'x');
+        const std::string input = std::string("{\"escaped\":\"\\u20ac\",\"long\":\"") + longText + "\"}";
+        jeson::CompactDocument document;
+        expect(jeson::parse(input, document).ok()).toBe(true);
+
+        expect(document.root()["escaped"].stringValue() == "€").toBe(true);
+        expect(document.root()["long"].stringValue().size()).toBe(5000u);
+        expect(document.root()["long"].stringValue().front()).toBe('x');
+    });
+
+    it("[positive] round-trips compact and pretty JSON without a Value tree", []() {
+        jeson::CompactDocument document;
+        expect(jeson::parse(R"({"message":"hello","items":[null,true,-1,2,3.5]})", document).ok()).toBe(true);
+        expect(jeson::toJson(document))
+            .toBe(std::string(R"({"message":"hello","items":[null,true,-1,2,3.5]})"));
+        expect(jeson::toJson(document.root()["items"]))
+            .toBe(std::string("[null,true,-1,2,3.5]"));
+        expect(jeson::toJson(document, jeson::pretty))
+            .toBe(std::string("{\n  \"message\": \"hello\",\n  \"items\": [\n    null,\n    true,\n    -1,\n    2,\n    3.5\n  ]\n}"));
+    });
+
+    it("[positive] reports generic document statistics", []() {
+        jeson::CompactDocument document;
+        expect(jeson::parse(R"({"a":[1,true,null],"b":"text"})", document).ok()).toBe(true);
+        const auto statistics = document.statistics();
+        expect(statistics.objectCount).toBe(1u);
+        expect(statistics.arrayCount).toBe(1u);
+        expect(statistics.numberCount).toBe(1u);
+        expect(statistics.trueCount).toBe(1u);
+        expect(statistics.nullCount).toBe(1u);
+        expect(statistics.memberCount).toBe(2u);
+        expect(statistics.elementCount).toBe(3u);
+        expect(statistics.stringCount).toBe(3u);
+        expect(statistics.stringLength).toBe(6u);
+    });
+
+    it("[negative] rejects malformed input and clears partial state", []() {
+        jeson::CompactDocument document;
+        expect(jeson::parse(R"({"valid":true})", document).ok()).toBe(true);
+        const auto errors = jeson::parse(R"({"broken":[1,]})", document);
+
+        expect(errors.ok()).toBe(false);
+        expect(errors.list().empty()).toBe(false);
+        expect(document.empty()).toBe(true);
+        expect(document.root().valid()).toBe(false);
+    });
+});

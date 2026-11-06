@@ -97,3 +97,39 @@ for (const auto& error : errors.list()) {
 ## Writer options
 
 `jeson::toJson(value)` emits compact JSON. Pass `jeson::pretty`, `jeson::compact_omit_nulls`, or a custom `WriteOptions{pretty, indentBy, omitNulls}`.
+
+## Schema-less documents
+
+`jeson::Value` is the convenient mutable DOM. Objects retain insertion order
+and use familiar `std::variant`, `std::vector`, and `std::string` storage.
+
+`jeson::CompactDocument` is the read-oriented option for constrained devices.
+It owns decoded keys and strings, stores JSON values in fixed-size pages, and
+exposes lightweight `CompactValue` handles:
+
+```cpp
+jeson::CompactDocument document;
+if (jeson::parse(payload, document)) {
+    auto root = document.root();
+    auto name = root["name"].stringValue();
+    for (auto item : root["items"].children()) {
+        use(item);
+    }
+}
+```
+
+Missing keys and out-of-range indexes return an invalid handle. Scalar accessors
+accept a fallback value. `children()` iterates arrays and object members; for an
+object child, `key()` returns the member name. The document can serialize itself
+or any valid subtree without first creating a `Value` tree.
+
+The default 64-node pages consume 1,536 bytes and ordinary string pages consume
+1,024 bytes. Define `JESON_COMPACT_NODE_PAGE_NODES` or
+`JESON_COMPACT_STRING_PAGE_BYTES` before the first JESON include to tune this
+granularity. Smaller pages reduce slack for tiny documents; larger pages reduce
+allocation traffic for very large documents.
+
+Compact views are invalidated when their document is cleared, parsed again,
+moved, or destroyed. The compact DOM intentionally does not provide mutation or
+the typed API's path-specific validation diagnostics; choose `Value` or a typed
+aggregate when those features matter more than generic parse RAM.

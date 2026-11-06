@@ -1,6 +1,6 @@
 {
   "name": "JESON",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Lightweight, typed JSON for embedded and desktop C++20",
   "keywords": ["json", "embedded", "serialization", "validation", "reflection"],
   "repository": {
@@ -23,4 +23,3 @@
     "flags": ["-std=gnu++20"]
   }
 }
-

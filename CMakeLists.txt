@@ -7,7 +7,7 @@ cmake_minimum_required(VERSION 3.16)
 
 project(
     jeson
-    VERSION 0.1.0
+    VERSION 0.2.0
     DESCRIPTION "Lightweight, typed JSON for embedded and desktop C++20"
     HOMEPAGE_URL "https://github.com/mijelsma/jeson"
     LANGUAGES CXX
@@ -51,7 +51,7 @@ if(JESON_BUILD_TESTS)
 endif()
 
 if(JESON_BUILD_EXAMPLES)
-    foreach(example IN ITEMS simple nested_and_arrays enum validator writer errors patch advanced value)
+    foreach(example IN ITEMS simple nested_and_arrays enum validator writer errors patch advanced value compact_document)
         add_executable(jeson_example_${example} examples/${example}_example.cpp)
         target_link_libraries(jeson_example_${example} PRIVATE jeson::jeson)
     endforeach()

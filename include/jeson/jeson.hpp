@@ -7,6 +7,7 @@
  */
 #pragma once
 
+#include "compact_document.hpp"
 #include "enum.hpp"
 #include "errors.hpp"
 #include "field.hpp"
@@ -22,6 +23,21 @@
 #include "writer.hpp"
 
 namespace jeson {
+
+/** Parses schema-less JSON into the low-allocation CompactDocument DOM. */
+inline ParseErrors parse(std::string_view t_json, CompactDocument& t_target) {
+    return t_target.parse(t_json);
+}
+
+/** Serializes a CompactDocument without materializing an intermediate Value tree. */
+inline std::string toJson(const CompactDocument& t_document, WriteOptions t_options = {}) {
+    return t_document.toJson(t_options);
+}
+
+/** Serializes one CompactValue subtree. */
+inline std::string toJson(const CompactValue& t_value, WriteOptions t_options = {}) {
+    return t_value.toJson(t_options);
+}
 
 /**
  * @brief Parses JSON text into a jeson struct.

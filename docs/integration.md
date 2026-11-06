@@ -25,7 +25,7 @@ cmake --install build --prefix /your/prefix
 Consume it from another project:
 
 ```cmake
-find_package(jeson 0.1 CONFIG REQUIRED)
+find_package(jeson 0.2 CONFIG REQUIRED)
 target_link_libraries(app PRIVATE jeson::jeson)
 ```
 
@@ -40,7 +40,7 @@ include(FetchContent)
 FetchContent_Declare(
   jeson
   GIT_REPOSITORY https://github.com/mijelsma/jeson.git
-  GIT_TAG 0.1.0
+  GIT_TAG 0.2.0
   GIT_SHALLOW TRUE
 )
 FetchContent_MakeAvailable(jeson)
@@ -81,7 +81,7 @@ Use the repository directly until a PlatformIO Registry release exists:
 [env:device]
 platform = espressif32
 framework = espidf
-lib_deps = https://github.com/mijelsma/jeson.git#0.1.0
+lib_deps = https://github.com/mijelsma/jeson.git#0.2.0
 build_unflags = -std=gnu++11
 build_flags = -std=gnu++20
 ```
@@ -138,7 +138,7 @@ Create a local package from a checkout:
 conan create . --build=missing
 ```
 
-Then require `jeson/0.1.0` and use the generated CMake target `jeson::jeson`.
+Then require `jeson/0.2.0` and use the generated CMake target `jeson::jeson`.
 
 ## pkg-config
 

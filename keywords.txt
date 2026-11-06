@@ -8,10 +8,12 @@ Maximum	KEYWORD2
 MinSize	KEYWORD2
 MaxSize	KEYWORD2
 Patch	KEYWORD2
+Value	KEYWORD2
+CompactDocument	KEYWORD2
+CompactValue	KEYWORD2
 ParseErrors	KEYWORD2
 WriteOptions	KEYWORD2
 parse	KEYWORD2
 toJson	KEYWORD2
 pretty	LITERAL1
 compact_omit_nulls	LITERAL1
-

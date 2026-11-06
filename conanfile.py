@@ -4,7 +4,7 @@ from conan.tools.files import copy
 
 class JesonConan(ConanFile):
     name = "jeson"
-    version = "0.1.0"
+    version = "0.2.0"
     description = "Lightweight, typed JSON for embedded and desktop C++20"
     license = "MIT"
     homepage = "https://github.com/mijelsma/jeson"
@@ -26,4 +26,3 @@ class JesonConan(ConanFile):
         self.cpp_info.set_property("cmake_target_name", "jeson::jeson")
         self.cpp_info.bindirs = []
         self.cpp_info.libdirs = []
-
