@@ -41,7 +41,7 @@ API:
 |---|---|---|
 | The fields are known at compile time | **Typed API** (`Field`, structs, `parse(json, model)`) | Parses directly into your model. This is the normal and lowest-RAM firmware path. |
 | The fields are not known and you need to edit the document | **Mutable DOM** (`jeson::Value`) | Builds a familiar, editable tree using strings, vectors, and variants. |
-| The fields are not known and you only need to inspect, forward, or serialize the document | **Compact DOM** (`jeson::CompactDocument`) | Builds a read-only paged tree with fewer allocations on larger documents. |
+| The fields are not known and you need to inspect or selectively reserialize the document, but not edit it | **Compact DOM** (`jeson::CompactDocument`) | Builds a read-only paged tree with fewer allocations on larger documents. |
 
 In short: **known schema → typed API; unknown and editable → `Value`; unknown
 and read-only → `CompactDocument`.** `Value` here means the generic JSON tree;
@@ -51,6 +51,14 @@ The compact-DOM work in 0.2.0 does not make typed parsing faster or smaller.
 Typed parsing already bypassed both DOMs and is still the recommended path for
 device configuration, commands, and telemetry. The typed benchmark was added
 to show that separate path, not to claim a before/after typed improvement.
+
+`CompactDocument` is a specialized escape hatch for gateways, protocol
+bridges, diagnostics, and other code that must traverse JSON with an unknown
+shape while keeping allocation traffic down. It is **not** useful when the
+schema is known, when the JSON must be edited, or when bytes can simply be
+forwarded unchanged. In those cases use the typed API, `Value`, or no parser,
+respectively. Its page allocation can also cost more than `Value` for very
+small documents; the compact layout is aimed at larger generic trees.
 
 ## Designed for constrained firmware
 
@@ -266,6 +274,11 @@ if (errors) {
     send(jeson::toJson(document));
 }
 ```
+
+Typical examples are an embedded gateway inspecting a message type before
+routing an otherwise unknown payload, or diagnostic firmware extracting a few
+fields from vendor-defined JSON. If the payload is forwarded completely
+unchanged without inspection, keep the original bytes and do not parse it.
 
 `CompactValue` is a small read-only view; the document owns all decoded text,
 so the input buffer may be released after parsing. Views are invalidated by

@@ -107,7 +107,7 @@ known when the program is compiled. They are separate from the typed API:
 |---|---:|---|
 | Typed aggregate (`Field`, structs) | Through normal C++ members | Known device configuration, commands, and telemetry; no DOM is built. |
 | Mutable DOM (`jeson::Value`) | Yes | Unknown JSON that must be created or edited. |
-| Compact DOM (`jeson::CompactDocument`) | No | Unknown JSON that only needs inspection, forwarding, or serialization with lower allocation overhead on larger documents. |
+| Compact DOM (`jeson::CompactDocument`) | No | Unknown JSON that must be inspected or selectively reserialized with lower allocation overhead on larger documents. |
 
 `jeson::Value` is the C++ type behind the mutable DOM. Objects retain insertion
 order and use familiar `std::variant`, `std::vector`, and `std::string` storage.
@@ -128,6 +128,11 @@ if (jeson::parse(payload, document)) {
 }
 ```
 
+This is mainly useful in gateways, protocol bridges, and diagnostics that must
+traverse messages whose shape is not known at compile time. Do not use it for a
+known schema (use a typed aggregate), for editing (use `Value`), or for blind
+pass-through (forward the original input without parsing it).
+
 Missing keys and out-of-range indexes return an invalid handle. Scalar accessors
 accept a fallback value. `children()` iterates arrays and object members; for an
 object child, `key()` returns the member name. The document can serialize itself
@@ -138,6 +143,10 @@ The default 64-node pages consume 1,536 bytes and ordinary string pages consume
 `JESON_COMPACT_STRING_PAGE_BYTES` before the first JESON include to tune this
 granularity. Smaller pages reduce slack for tiny documents; larger pages reduce
 allocation traffic for very large documents.
+
+Because the first pages have a fixed cost, the compact DOM is not guaranteed to
+use less memory for tiny documents. Its benefit is lower per-node overhead and
+far fewer allocations as generic documents grow.
 
 Compact views are invalidated when their document is cleared, parsed again,
 moved, or destroyed. The compact DOM intentionally does not provide mutation or
