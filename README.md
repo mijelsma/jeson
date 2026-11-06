@@ -28,7 +28,29 @@ if (result) {
 }
 ```
 
-The normal typed path has no registration macro, generated schema, runtime type table, intermediate DOM, exception-based error path, or compiled library to link. For schema-less work, JESON offers both a convenient mutable `jeson::Value` tree and a lower-allocation, read-oriented `jeson::CompactDocument`.
+The normal typed path has no registration macro, generated schema, runtime type
+table, intermediate DOM, exception-based error path, or compiled library to
+link.
+
+## Which API should I use?
+
+These are three different use cases, not fast and slow versions of the same
+API:
+
+| Your JSON | Use | What it does |
+|---|---|---|
+| The fields are known at compile time | **Typed API** (`Field`, structs, `parse(json, model)`) | Parses directly into your model. This is the normal and lowest-RAM firmware path. |
+| The fields are not known and you need to edit the document | **Mutable DOM** (`jeson::Value`) | Builds a familiar, editable tree using strings, vectors, and variants. |
+| The fields are not known and you only need to inspect, forward, or serialize the document | **Compact DOM** (`jeson::CompactDocument`) | Builds a read-only paged tree with fewer allocations on larger documents. |
+
+In short: **known schema → typed API; unknown and editable → `Value`; unknown
+and read-only → `CompactDocument`.** `Value` here means the generic JSON tree;
+it is unrelated to assigning or reading a typed `Field`.
+
+The compact-DOM work in 0.2.0 does not make typed parsing faster or smaller.
+Typed parsing already bypassed both DOMs and is still the recommended path for
+device configuration, commands, and telemetry. The typed benchmark was added
+to show that separate path, not to claim a before/after typed improvement.
 
 ## Designed for constrained firmware
 
@@ -213,7 +235,8 @@ jeson::toJson(settings, jeson::compact_omit_nulls);
 jeson::toJson(settings, jeson::WriteOptions{true, 4, true});
 ```
 
-For documents whose schema is not known at compile time and must be mutated, use the dynamic value API:
+For documents whose schema is not known at compile time and must be mutated,
+use the **mutable DOM**, whose C++ type is `jeson::Value`:
 
 ```cpp
 jeson::Value document;
@@ -226,7 +249,8 @@ if (errors) {
 
 `Value::Object` is an insertion-ordered vector of key/value pairs. The typed API remains the recommended embedded path because it avoids constructing this generic tree.
 
-When the document is schema-less but read-mostly, `CompactDocument` stores
+When the document is schema-less but read-only or read-mostly, the **compact
+DOM**, whose owning C++ type is `jeson::CompactDocument`, stores
 24-byte nodes and strings in pages instead of allocating an STL container at
 every level:
 
@@ -285,12 +309,13 @@ The top-level build includes all examples and tests. When JESON is consumed with
 
 The reproducible cross-library benchmark lives in the JESON-maintained fork of [nativejson-benchmark](https://github.com/mijelsma/nativejson-benchmark). It compares JESON with cJSON, reflect-cpp, RapidJSON, nlohmann/json, and ArduinoJson for parsing, stringify, pretty-print, parse allocations/peak memory, conformance, and per-adapter binary size.
 
-The DOM lane now measures both JESON dynamic representations: mutable `Value`
-and read-oriented `CompactDocument`. A separate application-model lane compares
-JESON and reflect-cpp native typed parsing with the DOM-plus-manual-mapping path
-required by the other pinned adapters. Exact dependency commits, compiler
-flags, commands, and result interpretation are recorded in the benchmark
-repository rather than embedding machine-specific numbers here.
+The DOM lane measures the mutable DOM (`Value`) and compact DOM
+(`CompactDocument`). These apply only to unknown-schema documents. A separate
+application-model lane measures the unchanged typed API and compares JESON and
+reflect-cpp direct typed parsing with the DOM-plus-manual-mapping path required
+by the other pinned adapters. Exact dependency commits, compiler flags,
+commands, and result interpretation are recorded in the benchmark repository
+rather than embedding machine-specific numbers here.
 
 ## License
 

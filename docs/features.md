@@ -100,12 +100,22 @@ for (const auto& error : errors.list()) {
 
 ## Schema-less documents
 
-`jeson::Value` is the convenient mutable DOM. Objects retain insertion order
-and use familiar `std::variant`, `std::vector`, and `std::string` storage.
+The schema-less APIs are escape hatches for JSON whose keys and shape are not
+known when the program is compiled. They are separate from the typed API:
 
-`jeson::CompactDocument` is the read-oriented option for constrained devices.
-It owns decoded keys and strings, stores JSON values in fixed-size pages, and
-exposes lightweight `CompactValue` handles:
+| API | Mutable? | Best fit |
+|---|---:|---|
+| Typed aggregate (`Field`, structs) | Through normal C++ members | Known device configuration, commands, and telemetry; no DOM is built. |
+| Mutable DOM (`jeson::Value`) | Yes | Unknown JSON that must be created or edited. |
+| Compact DOM (`jeson::CompactDocument`) | No | Unknown JSON that only needs inspection, forwarding, or serialization with lower allocation overhead on larger documents. |
+
+`jeson::Value` is the C++ type behind the mutable DOM. Objects retain insertion
+order and use familiar `std::variant`, `std::vector`, and `std::string` storage.
+Its name does not refer to a typed field value.
+
+`jeson::CompactDocument` owns the compact DOM. It is the read-oriented option
+for constrained devices. It owns decoded keys and strings, stores JSON values
+in fixed-size pages, and exposes lightweight `CompactValue` handles:
 
 ```cpp
 jeson::CompactDocument document;
@@ -133,3 +143,7 @@ Compact views are invalidated when their document is cleared, parsed again,
 moved, or destroyed. The compact DOM intentionally does not provide mutation or
 the typed API's path-specific validation diagnostics; choose `Value` or a typed
 aggregate when those features matter more than generic parse RAM.
+
+The compact DOM is not used internally by typed parsing. The 0.2.0 compact-DOM
+optimization therefore changes schema-less parsing only; the typed API and its
+performance are unchanged.
